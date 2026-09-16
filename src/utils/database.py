@@ -1,12 +1,18 @@
+import os
+
 import psycopg2
+from dotenv import load_dotenv
+
+
+load_dotenv()
 
 
 DB_CONFIG = {
-    "host": "localhost",
-    "port": 5432,
-    "database": "nexamart",
-    "user": "postgres",
-    "password": "123456789"
+    "host": os.getenv("SUPABASE_DB_HOST"),
+    "port": os.getenv("SUPABASE_DB_PORT", "5432"),
+    "database": os.getenv("SUPABASE_DB_NAME", "postgres"),
+    "user": os.getenv("SUPABASE_DB_USER"),
+    "password": os.getenv("SUPABASE_DB_PASSWORD"),
 }
 
 
