@@ -1,0 +1,24 @@
+version: 2
+
+sources:
+  - name: analytics_staging
+    description: Spark-validated inventory datasets published by the Airflow bridge.
+    schema: analytics_staging
+    tables:
+      - name: inventory_movements_processed
+        description: Enriched inventory movement events at movement grain.
+      - name: inventory_daily_metrics
+        description: Daily inventory movement metrics at warehouse, product, and date grain.
+      - name: inventory_snapshot_enriched
+        description: Enriched inventory snapshots at inventory-position grain.
+
+  - name: public
+    description: Read-only operational source tables used by validated marts.
+    schema: public
+    tables:
+      - name: products
+      - name: warehouses
+      - name: suppliers
+      - name: purchase_orders
+      - name: purchase_order_items
+      - name: orders

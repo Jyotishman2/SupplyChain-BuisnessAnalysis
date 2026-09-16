@@ -1,0 +1,17 @@
+name: supply_chain_analytics
+version: 1.0.0
+config-version: 2
+
+profile: supply_chain_analytics
+
+model-paths: ["models"]
+test-paths: ["tests"]
+macro-paths: ["macros"]
+clean-targets: ["target", "dbt_packages"]
+
+models:
+  supply_chain_analytics:
+    staging:
+      +materialized: view
+    marts:
+      +materialized: view

@@ -8,4 +8,5 @@ RUN apt-get update \
 
 USER airflow
 COPY airflow/requirements.txt /tmp/airflow-requirements.txt
-RUN pip install --no-cache-dir -r /tmp/airflow-requirements.txt
+RUN python -m pip install --no-cache-dir -r /tmp/airflow-requirements.txt \
+	&& dbt --version

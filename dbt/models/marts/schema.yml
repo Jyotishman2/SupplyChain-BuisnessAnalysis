@@ -1,0 +1,34 @@
+version: 2
+
+models:
+  - name: fct_inventory_stockout_daily
+    description: Daily warehouse stock-out rate derived from enriched inventory snapshots.
+    columns:
+      - name: snapshot_date
+        tests: [not_null]
+      - name: warehouse_id
+        tests: [not_null]
+      - name: stockout_rate
+        description: Share of inventory positions classified as STOCK_OUT.
+
+  - name: fct_supplier_performance
+    description: Supplier purchase-order delivery and receipt performance.
+    columns:
+      - name: supplier_id
+        tests: [not_null, unique]
+      - name: supplier_name
+        tests: [not_null]
+      - name: on_time_delivery_rate
+        description: Delivered purchase orders on or before expected delivery divided by delivered purchase orders.
+      - name: receipt_fill_rate
+        description: Received units divided by ordered units.
+
+  - name: fct_order_delivery_performance_daily
+    description: Daily on-time delivery and order-cycle-time KPI interface for delivered orders.
+    columns:
+      - name: delivery_date
+        tests: [not_null, unique]
+      - name: on_time_delivery_rate
+        description: Delivered orders on or before promised delivery divided by orders with a promised date.
+      - name: average_order_cycle_days
+        description: Mean elapsed days from order timestamp to actual delivery timestamp.

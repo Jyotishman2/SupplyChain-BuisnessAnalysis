@@ -1,0 +1,22 @@
+select
+    movement_id,
+    movement_date,
+    movement_timestamp,
+    movement_year,
+    movement_month,
+    movement_week,
+    movement_type,
+    movement_direction,
+    quantity,
+    signed_quantity,
+    reference_id,
+    warehouse_id,
+    warehouse_name,
+    warehouse_city,
+    warehouse_state,
+    product_id,
+    sku,
+    product_name,
+    category_id,
+    category_name
+from {{ source('analytics_staging', 'inventory_movements_processed') }}

@@ -11,6 +11,10 @@ env/
 # Environment variables / secrets
 .env
 .env.*
+dbt/.venv/
+dbt/target/
+dbt/logs/
+dbt/profiles.local.yml
 
 # Data files
 data/raw/*

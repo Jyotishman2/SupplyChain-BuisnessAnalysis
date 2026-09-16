@@ -72,18 +72,19 @@ def run_dbt():
             "project before enabling run_dbt."
         )
 
+    project_path = Path(project_dir)
+    if not (project_path / "dbt_project.yml").is_file():
+        raise AirflowException(f"dbt project does not exist: {project_path}")
+
     command_prefix = shlex.split(os.getenv("DBT_COMMAND", "dbt"))
-    for command in ("deps", "seed", "run", "test"):
-        LOGGER.info("[INFO] Running dbt %s", command)
-        subprocess.run(
-            command_prefix + [command],
-            cwd=Path(project_dir),
-            check=True,
-        )
+    command = command_prefix + ["build", "--project-dir", str(project_path)]
+    LOGGER.info("[INFO] Running dbt build for project: %s", project_path)
+    subprocess.run(command, cwd=project_path, check=True)
 
 
 @task(task_id="validate_analytics", retries=1, retry_delay=timedelta(minutes=2), execution_timeout=timedelta(minutes=15))
 def validate_analytics():
+    output_schema = os.getenv("ANALYTICAL_OUTPUT_SCHEMA", "analytics").strip()
     output_tables = [
         table.strip()
         for table in os.getenv("ANALYTICAL_OUTPUT_TABLES", "").split(",")
@@ -94,6 +95,8 @@ def validate_analytics():
             "Analytical outputs are not configured. Set ANALYTICAL_OUTPUT_TABLES "
             "after Spark and dbt models are implemented."
         )
+    if not output_schema.replace("_", "").isalnum():
+        raise AirflowException(f"Invalid analytical schema name: {output_schema}")
 
     from src.utils.database import get_connection
 
@@ -108,18 +111,22 @@ def validate_analytics():
                 SELECT EXISTS (
                     SELECT 1
                     FROM information_schema.tables
-                    WHERE table_schema = 'public' AND table_name = %s
+                    WHERE table_schema = %s AND table_name = %s
                 );
                 """,
-                (table_name,),
+                (output_schema, table_name),
             )
             if not cursor.fetchone()[0]:
-                raise AirflowException(f"Analytical output table is missing: {table_name}")
-            cursor.execute(f"SELECT COUNT(*) FROM public.{table_name};")
+                raise AirflowException(
+                    f"Analytical output relation is missing: {output_schema}.{table_name}"
+                )
+            cursor.execute(f"SELECT COUNT(*) FROM {output_schema}.{table_name};")
             row_count = cursor.fetchone()[0]
-            LOGGER.info("[INFO] %s row count: %s", table_name, row_count)
+            LOGGER.info("[INFO] %s.%s row count: %s", output_schema, table_name, row_count)
             if row_count == 0:
-                raise AirflowException(f"Analytical output table is empty: {table_name}")
+                raise AirflowException(
+                    f"Analytical output relation is empty: {output_schema}.{table_name}"
+                )
     finally:
         cursor.close()
         connection.close()

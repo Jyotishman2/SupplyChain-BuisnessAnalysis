@@ -2,13 +2,13 @@ services:
   airflow-db:
     image: postgres:16
     environment:
-      POSTGRES_USER: airflow
-      POSTGRES_PASSWORD: airflow
-      POSTGRES_DB: airflow
+      POSTGRES_USER: ${AIRFLOW_DB_USER}
+      POSTGRES_PASSWORD: ${AIRFLOW_DB_PASSWORD}
+      POSTGRES_DB: ${AIRFLOW_DB_NAME}
     volumes:
       - airflow-db-data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U airflow -d airflow"]
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -21,7 +21,7 @@ services:
       airflow-db:
         condition: service_healthy
     environment: &airflow-common-env
-      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow-db:5432/airflow
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${AIRFLOW_DB_USER}:${AIRFLOW_DB_PASSWORD}@airflow-db:5432/${AIRFLOW_DB_NAME}
       AIRFLOW__CORE__LOAD_EXAMPLES: "false"
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
       AIRFLOW__CORE__DAGS_FOLDER: /opt/airflow/dags
@@ -37,9 +37,16 @@ services:
       SPARK_OUTPUT_PATH: ${SPARK_OUTPUT_PATH:-data/processed}
       SPARK_LOAD_JOB_PATH: ${SPARK_LOAD_JOB_PATH:-spark/jobs/load_inventory_outputs.py}
       SPARK_LOAD_SUBMIT_COMMAND: ${SPARK_LOAD_SUBMIT_COMMAND:-spark-submit --packages org.postgresql:postgresql:42.7.4}
-      DBT_PROJECT_DIR: ${DBT_PROJECT_DIR:-}
+      DBT_PROJECT_DIR: ${DBT_PROJECT_DIR:-/opt/airflow/project/dbt}
+      DBT_PROFILES_DIR: ${DBT_PROFILES_DIR:-/opt/airflow/project/dbt}
+      DBT_PARTIAL_PARSE: "0"
       DBT_COMMAND: ${DBT_COMMAND:-dbt}
-      ANALYTICAL_OUTPUT_TABLES: ${ANALYTICAL_OUTPUT_TABLES:-}
+      ANALYTICAL_OUTPUT_SCHEMA: "analytics"
+      ANALYTICAL_OUTPUT_TABLES: "stg_inventory_movements,stg_inventory_daily_metrics,stg_inventory_snapshot,fct_inventory_stockout_daily,fct_supplier_performance,fct_order_delivery_performance_daily"
+      # Development-only UI administrator, injected from the local .env file.
+      AIRFLOW_ADMIN_USERNAME: ${AIRFLOW_ADMIN_USERNAME}
+      AIRFLOW_ADMIN_PASSWORD: ${AIRFLOW_ADMIN_PASSWORD}
+      AIRFLOW_ADMIN_EMAIL: ${AIRFLOW_ADMIN_EMAIL}
     volumes: &airflow-common-volumes
       - ./airflow/dags:/opt/airflow/dags
       - ./airflow/logs:/opt/airflow/logs
@@ -47,12 +54,15 @@ services:
     command: >-
       bash -c "airflow db migrate &&
       airflow users create
-      --username $${AIRFLOW_ADMIN_USERNAME:-airflow}
-      --password $${AIRFLOW_ADMIN_PASSWORD:-airflow}
+      --username $${AIRFLOW_ADMIN_USERNAME}
+      --password $${AIRFLOW_ADMIN_PASSWORD}
       --firstname Supply
       --lastname Chain
       --role Admin
-      --email $${AIRFLOW_ADMIN_EMAIL:-airflow@example.com} || true"
+      --email $${AIRFLOW_ADMIN_EMAIL} ||
+      airflow users reset-password
+      --username $${AIRFLOW_ADMIN_USERNAME}
+      --password $${AIRFLOW_ADMIN_PASSWORD}"
 
   airflow-webserver:
     build:

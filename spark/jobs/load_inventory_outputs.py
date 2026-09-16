@@ -22,6 +22,7 @@ LOGGER = logging.getLogger("load_inventory_outputs")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
 TARGET_SCHEMA = "analytics_staging"
+JDBC_WRITE_PARTITIONS = 4
 OUTPUTS = {
     "inventory_movements_processed": {
         "path": "inventory_movements_processed",
@@ -363,7 +364,9 @@ def main():
         LOGGER.info("Writing validated outputs to temporary PostgreSQL tables")
         for target_name, dataframe in dataframes.items():
             temporary_table = temporary_names[target_name]
-            dataframe.write.mode("overwrite").option("batchsize", "10000").jdbc(
+            dataframe.coalesce(JDBC_WRITE_PARTITIONS).write.mode("overwrite").option(
+                "batchsize", "10000"
+            ).jdbc(
                 url=jdbc_url,
                 table=f"{TARGET_SCHEMA}.{temporary_table}",
                 properties=properties,
@@ -377,29 +380,24 @@ def main():
                     cursor.execute("SET LOCAL lock_timeout = '30s'")
                     for target_name, specification in OUTPUTS.items():
                         temporary_table = temporary_names[target_name]
+                        columns = list(specification["postgres_types"])
                         cursor.execute(
-                            sql.SQL("DROP TABLE IF EXISTS {}")
+                            sql.SQL("TRUNCATE TABLE {}")
                             .format(table_identifier(TARGET_SCHEMA, target_name))
                         )
                         cursor.execute(
-                            sql.SQL("ALTER TABLE {} RENAME TO {}")
-                            .format(
-                                table_identifier(TARGET_SCHEMA, temporary_table),
-                                sql.Identifier(target_name),
-                            )
-                        )
-                        constraint_kind, constraint_columns = CONSTRAINTS[target_name]
-                        constraint_name = f"{target_name}_key"
-                        cursor.execute(
-                            sql.SQL("ALTER TABLE {} ADD CONSTRAINT {} {} ({})")
+                            sql.SQL("INSERT INTO {} ({}) SELECT {} FROM {}")
                             .format(
                                 table_identifier(TARGET_SCHEMA, target_name),
-                                sql.Identifier(constraint_name),
-                                sql.SQL(constraint_kind),
                                 sql.SQL(", ").join(
                                     sql.Identifier(column)
-                                    for column in constraint_columns
+                                    for column in columns
                                 ),
+                                sql.SQL(", ").join(
+                                    sql.Identifier(column)
+                                    for column in columns
+                                ),
+                                table_identifier(TARGET_SCHEMA, temporary_table),
                             )
                         )
                     for target_name, specification in OUTPUTS.items():
@@ -407,6 +405,7 @@ def main():
         finally:
             connection.close()
 
+        cleanup_tables(temporary_names.values())
         LOGGER.info("Spark output load completed successfully")
     except Exception:
         cleanup_tables(temporary_names.values())

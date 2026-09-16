@@ -13,6 +13,7 @@ DB_CONFIG = {
     "database": os.getenv("SUPABASE_DB_NAME", "postgres"),
     "user": os.getenv("SUPABASE_DB_USER"),
     "password": os.getenv("SUPABASE_DB_PASSWORD"),
+    "sslmode": os.getenv("SUPABASE_DB_SSLMODE", "require"),
 }
 
 

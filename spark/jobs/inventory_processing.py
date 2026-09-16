@@ -28,6 +28,7 @@ MOVEMENT_TYPES = (
 )
 INBOUND_TYPES = ("PURCHASE_RECEIPT", "RETURN", "TRANSFER_IN")
 OUTBOUND_TYPES = ("SALE", "DAMAGE", "TRANSFER_OUT")
+PARQUET_WRITE_PARTITIONS = 2
 REQUIRED_COLUMNS = {
     "inventory": {
         "inventory_id", "warehouse_id", "product_id", "snapshot_date",
@@ -226,13 +227,13 @@ def build_inventory_output(inventory, products, warehouses, categories):
     )
 
 
-def validate_output(dataframe, name, required_columns):
+def validate_output(dataframe, name, required_columns, row_count):
     missing_columns = set(required_columns) - set(dataframe.columns)
     if missing_columns:
         raise RuntimeError(
             f"{name} output is missing columns: " + ", ".join(sorted(missing_columns))
         )
-    if dataframe.limit(1).count() == 0:
+    if row_count == 0:
         raise RuntimeError(f"{name} output is unexpectedly empty")
 
 
@@ -251,6 +252,8 @@ def main():
         .getOrCreate()
     )
     spark.sparkContext.setLogLevel(os.getenv("SPARK_LOG_LEVEL", "WARN"))
+    spark.conf.set("spark.hadoop.mapreduce.fileoutputcommitter.algorithm.version", "2")
+    cached_outputs = []
 
     try:
         table_names = ("inventory", "inventory_movements", "products", "warehouses", "categories")
@@ -265,45 +268,56 @@ def main():
 
         enriched_movements = build_movement_output(
             movements, products, warehouses, categories
-        )
-        daily_metrics = build_daily_output(enriched_movements)
+        ).cache()
+        daily_metrics = build_daily_output(enriched_movements).cache()
         inventory_snapshot = build_inventory_output(
             inventory, products, warehouses, categories
-        )
+        ).cache()
+        cached_outputs.extend((enriched_movements, daily_metrics, inventory_snapshot))
+        row_counts = {
+            "inventory movements": enriched_movements.count(),
+            "daily metrics": daily_metrics.count(),
+            "inventory snapshots": inventory_snapshot.count(),
+        }
         validate_output(
             enriched_movements,
             "inventory_movements_processed",
             ("movement_id", "movement_date", "signed_quantity", "category_id"),
+            row_counts["inventory movements"],
         )
         validate_output(
             daily_metrics,
             "inventory_daily_metrics",
             ("movement_date", "inbound_quantity", "outbound_quantity", "net_quantity"),
+            row_counts["daily metrics"],
         )
         validate_output(
             inventory_snapshot,
             "inventory_snapshot_enriched",
             ("snapshot_date", "closing_stock", "available_stock", "stock_status"),
+            row_counts["inventory snapshots"],
         )
 
         output_root.mkdir(parents=True, exist_ok=True)
         LOGGER.info("Writing processed inventory data")
-        enriched_movements.write.mode("overwrite").partitionBy(
+        enriched_movements.coalesce(PARQUET_WRITE_PARTITIONS).write.mode("overwrite").partitionBy(
             "movement_year", "movement_month"
         ).parquet(str(output_root / "inventory_movements_processed"))
-        daily_metrics.write.mode("overwrite").partitionBy(
+        daily_metrics.coalesce(PARQUET_WRITE_PARTITIONS).write.mode("overwrite").partitionBy(
             "movement_year", "movement_month"
         ).parquet(str(output_root / "inventory_daily_metrics"))
-        inventory_snapshot.write.mode("overwrite").partitionBy(
+        inventory_snapshot.coalesce(PARQUET_WRITE_PARTITIONS).write.mode("overwrite").partitionBy(
             "snapshot_year", "snapshot_month"
         ).parquet(str(output_root / "inventory_snapshot_enriched"))
 
-        LOGGER.info("Rows written: inventory movements=%s", enriched_movements.count())
-        LOGGER.info("Rows written: daily metrics=%s", daily_metrics.count())
-        LOGGER.info("Rows written: inventory snapshots=%s", inventory_snapshot.count())
+        LOGGER.info("Rows written: inventory movements=%s", row_counts["inventory movements"])
+        LOGGER.info("Rows written: daily metrics=%s", row_counts["daily metrics"])
+        LOGGER.info("Rows written: inventory snapshots=%s", row_counts["inventory snapshots"])
         LOGGER.info("Validation: PASSED")
         LOGGER.info("Spark job completed successfully")
     finally:
+        for dataframe in cached_outputs:
+            dataframe.unpersist()
         spark.stop()
 
 

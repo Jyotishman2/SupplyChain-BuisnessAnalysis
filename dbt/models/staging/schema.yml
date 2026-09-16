@@ -1,0 +1,60 @@
+version: 2
+
+models:
+  - name: stg_inventory_movements
+    description: Clean relational interface for Spark-enriched inventory movements.
+    columns:
+      - name: movement_id
+        tests: [not_null, unique]
+      - name: movement_date
+        tests: [not_null]
+      - name: warehouse_id
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: source('public', 'warehouses')
+                field: warehouse_id
+      - name: product_id
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: source('public', 'products')
+                field: product_id
+      - name: movement_type
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['PURCHASE_RECEIPT', 'SALE', 'RETURN', 'TRANSFER_IN', 'TRANSFER_OUT', 'DAMAGE', 'ADJUSTMENT']
+
+  - name: stg_inventory_daily_metrics
+    description: Clean daily inbound, outbound, and net inventory movement metrics.
+    columns:
+      - name: warehouse_id
+        tests: [not_null]
+      - name: product_id
+        tests: [not_null]
+      - name: movement_date
+        tests: [not_null]
+      - name: movement_count
+        tests: [not_null]
+
+  - name: stg_inventory_snapshot
+    description: Clean enriched inventory snapshot interface for stock availability analysis.
+    columns:
+      - name: inventory_id
+        tests: [not_null, unique]
+      - name: warehouse_id
+        tests: [not_null]
+      - name: product_id
+        tests: [not_null]
+      - name: snapshot_date
+        tests: [not_null]
+      - name: stock_status
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['STOCK_OUT', 'REORDER', 'HEALTHY']
